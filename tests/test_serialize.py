@@ -110,6 +110,9 @@ if "msgpack" in Pyro5.serializers.serializers:
     class TestMsgpackSerializer(TestSerpentSerializer):
         serializer = Pyro5.serializers.serializers["msgpack"]
 
+if "pickle" in Pyro5.serializers.serializers:
+    class TestPickleSerializer(TestSerpentSerializer):
+        serializer = Pyro5.serializers.serializers["pickle"]
 
 class TestSerializer2_serpent:
     SERIALIZER = "serpent"
@@ -589,6 +592,46 @@ if "msgpack" in Pyro5.serializers.serializers:
             assert sorted(data2) == [111, 222, 333]
 
 
+if "pickle" in Pyro5.serializers.serializers:
+    class TestSerializer2_pickle(TestSerializer2_serpent):
+        SERIALIZER = "pickle"
+
+        def testDeque(self):
+            # pickle can serialize a deque
+            deq = collections.deque([1, 2, 3, 4])
+            ser = self.serializer.dumps(deq)
+            data2 = self.serializer.loads(ser)
+            assert data2 == collections.deque([1, 2, 3, 4])
+
+        def testCustomClassFail(self):
+            pass    # pickle works with custom classes
+
+        def testCustomClassOk(self):
+            o = MyThingPartlyExposed("test")
+            Pyro5.serializers.SerializerBase.register_class_to_dict(MyThingPartlyExposed, mything_dict)
+            Pyro5.serializers.SerializerBase.register_dict_to_class("CUSTOM-Mythingymabob", mything_creator)
+            s = self.serializer.dumps(o)
+            o2 = self.serializer.loads(s)
+            assert isinstance(o2, MyThingPartlyExposed)
+            assert o2.name == "test"
+            # unregister the deserializer
+            Pyro5.serializers.SerializerBase.unregister_dict_to_class("CUSTOM-Mythingymabob")
+            # unregister the serializer
+            Pyro5.serializers.SerializerBase.unregister_class_to_dict(MyThingPartlyExposed)
+            s = self.serializer.dumps(o)
+            assert o == self.serializer.loads(s)
+
+        def testCircularRefsValueError(self):
+            pass    # pickle does not raise ValueError
+
+        def testCircularRefs(self):
+            data = [42, "hello", Pyro5.client.Proxy("PYRO:dummy@dummy:4444")]
+            data.append(data)
+            ser = self.serializer.dumps(data)
+            data2 = self.serializer.loads(ser)
+            assert 42 == data2[0]
+            assert data2 == data2[3]
+
 class TestGenericCases:
     def testSerializersAvailable(self):
         _ = Pyro5.serializers.serializers["serpent"]
@@ -600,6 +643,7 @@ class TestGenericCases:
         assert Pyro5.serializers.MarshalSerializer.serializer_id == 2
         assert Pyro5.serializers.JsonSerializer.serializer_id == 3
         assert Pyro5.serializers.MsgpackSerializer.serializer_id == 4
+        assert Pyro5.serializers.PickleSerializer.serializer_id == 5
 
     def testSerializersAvailableById(self):
         _ = Pyro5.serializers.serializers_by_id[1]  # serpent
@@ -607,8 +651,9 @@ class TestGenericCases:
         _ = Pyro5.serializers.serializers_by_id[3]  # json
         if "msgpack" in Pyro5.serializers.serializers:
             _ = Pyro5.serializers.serializers_by_id[4]  # msgpack
+        if "pickle" in Pyro5.serializers.serializers:
+            _ = Pyro5.serializers.serializers_by_id[5]  # pickle
         assert 0 not in Pyro5.serializers.serializers_by_id
-        assert 5 not in Pyro5.serializers.serializers_by_id
 
     def testDictClassFail(self):
         o = MyThingFullExposed("hello")

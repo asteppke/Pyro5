@@ -6,6 +6,8 @@ Pyro - Python Remote Objects.  Copyright by Irmen de Jong (irmen@razorvine.net).
 
 import array
 import builtins
+import copyreg
+import pickle
 import uuid
 import logging
 import struct
@@ -24,6 +26,7 @@ except ImportError:
 from . import errors, config
 
 __all__ = ["SerializerBase", "SerpentSerializer", "JsonSerializer", "MarshalSerializer", "MsgpackSerializer",
+           "PickleSerializer",
            "serializers", "serializers_by_id"]
 
 log = logging.getLogger("Pyro5.serializers")
@@ -479,11 +482,46 @@ class MsgpackSerializer(SerializerBase):
         cls.__type_replacements[object_type] = replacement_function
 
 
+class PickleSerializer(SerializerBase):
+    """
+    A (de)serializer that wraps the Pickle serialization protocol.
+    It can optionally compress the serialized data.
+    """
+    serializer_id = 5  # never change this
+
+    def dumpsCall(self, obj, method, vargs, kwargs):
+        return pickle.dumps((obj, method, vargs, kwargs))
+
+    def dumps(self, data):
+        return pickle.dumps(data)
+
+    def loadsCall(self, data):
+        data = self._convertToBytes(data)
+        return pickle.loads(data)
+
+    def loads(self, data):
+        data = self._convertToBytes(data)
+        return pickle.loads(data)
+
+    @classmethod
+    def register_type_replacement(cls, object_type, replacement_function):
+        def copyreg_function(obj):
+            return replacement_function(obj).__reduce__()
+
+        if object_type is type or not inspect.isclass(object_type):
+            raise ValueError("refusing to register replacement for a non-type or the type 'type' itself")
+        try:
+            copyreg.pickle(object_type, copyreg_function)
+        except TypeError:
+            pass
+
+
 """The various serializers that are supported"""
 serializers = {
     "serpent": SerpentSerializer(),
     "marshal": MarshalSerializer(),
-    "json": JsonSerializer()
+    "json": JsonSerializer(),
+    "pickle": PickleSerializer(),
 }
 
 if msgpack:
